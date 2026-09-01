@@ -14,9 +14,11 @@ def test_mcp_server_registers_expected_tools():
         "show_memory",
         "search_transcript",
         "start_memory_session",
+        "ensure_memory_session",
         "capture_memory_turn",
         "remember_memory",
         "pending_consolidation",
+        "propose_memories",
         "mark_session_consolidated",
         "save_project_checkpoint",
         "get_project_checkpoint",
@@ -63,6 +65,28 @@ def test_mcp_memory_lifecycle(tmp_path, monkeypatch):
     assert shown["transcript"][0]["id"] == first["id"]
     assert pending["sessions"][0]["id"] == session["id"]
     assert consolidated["last_consolidated_turn_id"] == last["id"]
+
+
+def test_mcp_ensure_session_and_propose_memories(tmp_path, monkeypatch):
+    db_path = tmp_path / "mcp.sqlite3"
+    monkeypatch.setenv("ENGRAM_DB", str(db_path))
+    monkeypatch.setattr(vector_store, "upsert_engram", lambda *args, **kwargs: False)
+
+    first = mcp_server.ensure_memory_session("MCP", "Sticky")
+    second = mcp_server.ensure_memory_session("MCP", "Sticky")
+    turn = mcp_server.capture_memory_turn(
+        session_id=first["id"],
+        role="user",
+        content="We prefer MCP tools for Claude integration instead of ad hoc curl.",
+    )
+    proposed = mcp_server.propose_memories(first["id"])
+
+    assert first["created"] is True
+    assert second["created"] is False
+    assert second["id"] == first["id"]
+    assert proposed["candidates"][0]["source_turn_start"] == turn["id"]
+    assert proposed["candidates"][0]["kind"] == "preference"
+    assert "mcp" in proposed["candidates"][0]["tags"]
 
 
 def test_mcp_checkpoint_tools(tmp_path, monkeypatch):

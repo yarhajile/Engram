@@ -27,6 +27,13 @@ class StartSessionRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class EnsureSessionRequest(BaseModel):
+    project: str = Field(default="Engram")
+    title: str = Field(default="")
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    reuse_active: bool = True
+
+
 class CaptureTurnRequest(BaseModel):
     session_id: int
     role: str
@@ -69,6 +76,12 @@ class ImportTranscriptRequest(BaseModel):
     mark_consolidated: bool = False
 
 
+class ProposeMemoriesRequest(BaseModel):
+    session_id: int
+    limit: int = Field(default=8, ge=1, le=50)
+    max_body_chars: int = Field(default=1600, ge=200, le=20000)
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "database": str(database_path())}
@@ -85,6 +98,17 @@ def start_session(request: StartSessionRequest) -> dict[str, Any]:
         project=request.project,
         title=request.title,
         metadata=request.metadata,
+        db_path=database_path(),
+    )
+
+
+@app.post("/sessions/ensure")
+def ensure_session(request: EnsureSessionRequest) -> dict[str, Any]:
+    return store.ensure_session(
+        project=request.project,
+        title=request.title,
+        metadata=request.metadata,
+        reuse_active=request.reuse_active,
         db_path=database_path(),
     )
 
@@ -144,6 +168,19 @@ def search_turns(query: str, limit: int = 5, max_chars: int = 1200) -> dict[str,
 @app.get("/consolidation/pending")
 def pending() -> dict[str, Any]:
     return {"sessions": store.pending(database_path())}
+
+
+@app.post("/consolidation/propose")
+def propose_memories(request: ProposeMemoriesRequest) -> dict[str, Any]:
+    try:
+        return store.propose_memories(
+            session_id=request.session_id,
+            limit=request.limit,
+            max_body_chars=request.max_body_chars,
+            db_path=database_path(),
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.post("/sessions/{session_id}/mark-consolidated")

@@ -71,6 +71,29 @@ def start_session(
         return {"id": int(cur.lastrowid), "project": project, "title": title}
 
 
+def ensure_session(
+    project: str,
+    title: str = "",
+    metadata: dict[str, Any] | str | None = None,
+    reuse_active: bool = True,
+    db_path: Path = DEFAULT_DB,
+) -> dict[str, Any]:
+    with connect(db_path) as conn:
+        migrate(conn)
+        if reuse_active:
+            row = conn.execute(
+                "SELECT * FROM sessions WHERE project = ? AND title = ? AND status = 'active' ORDER BY id DESC LIMIT 1",
+                (project, title),
+            ).fetchone()
+            if row is not None:
+                return {"id": int(row["id"]), "project": row["project"], "title": row["title"], "created": False}
+        cur = conn.execute(
+            "INSERT INTO sessions(project, title, metadata_json) VALUES (?, ?, ?)",
+            (project, title, normalize_metadata(metadata)),
+        )
+        return {"id": int(cur.lastrowid), "project": project, "title": title, "created": True}
+
+
 def sync_turn_fts(conn: sqlite3.Connection, turn_id: int, content: str, role: str, phase: str) -> None:
     conn.execute("DELETE FROM turn_fts WHERE rowid = ?", (turn_id,))
     conn.execute(
@@ -414,6 +437,137 @@ def mark_consolidated(session_id: int, db_path: Path = DEFAULT_DB) -> dict[str, 
         ).fetchone()["latest"]
         conn.execute("UPDATE sessions SET last_consolidated_turn_id = ? WHERE id = ?", (latest, session_id))
         return {"session_id": session_id, "last_consolidated_turn_id": latest}
+
+
+def propose_memories(
+    session_id: int,
+    limit: int = 8,
+    max_body_chars: int = 1600,
+    db_path: Path = DEFAULT_DB,
+) -> dict[str, Any]:
+    with connect(db_path) as conn:
+        migrate(conn)
+        session = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        if session is None:
+            raise KeyError(f"No session with id {session_id}")
+        start_after = int(session["last_consolidated_turn_id"] or 0)
+        rows = conn.execute(
+            "SELECT id, role, phase, content FROM turns WHERE session_id = ? AND id > ? ORDER BY id",
+            (session_id, start_after),
+        ).fetchall()
+
+    candidates = build_memory_candidates(session_id, rows, limit, max_body_chars)
+    return {
+        "session_id": session_id,
+        "project": session["project"],
+        "title": session["title"],
+        "last_consolidated_turn_id": start_after,
+        "turn_count": len(rows),
+        "candidates": candidates,
+    }
+
+
+def build_memory_candidates(
+    session_id: int,
+    rows: list[sqlite3.Row],
+    limit: int,
+    max_body_chars: int,
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    for span in candidate_spans(rows):
+        combined = "\n".join(f"{row['role']}: {row['content'].strip()}" for row in span).strip()
+        if not combined:
+            continue
+        kind, tags, importance = classify_candidate(combined)
+        if kind == "note" and len(combined) < 160:
+            continue
+        first = int(span[0]["id"])
+        last = int(span[-1]["id"])
+        title = candidate_title(kind, combined)
+        body = combined[:max_body_chars].rstrip()
+        if len(combined) > max_body_chars:
+            body += "\n[truncated]"
+        candidates.append(
+            {
+                "kind": kind,
+                "title": title,
+                "summary": candidate_summary(combined),
+                "body": body,
+                "continuity": "high" if kind in {"preference", "decision"} else "low",
+                "durable": "high" if kind in {"preference", "decision", "gotcha"} else "low",
+                "importance": importance,
+                "confidence": 0.55,
+                "session_id": session_id,
+                "source_turn_start": first,
+                "source_turn_end": last,
+                "tags": tags,
+                "files": sorted(set(re.findall(r"[\w./-]+\.\w+", combined)))[:8],
+            }
+        )
+        if len(candidates) >= limit:
+            break
+    return candidates
+
+
+def candidate_spans(rows: list[sqlite3.Row]) -> list[list[sqlite3.Row]]:
+    spans: list[list[sqlite3.Row]] = []
+    current: list[sqlite3.Row] = []
+    for row in rows:
+        if row["role"] == "user" and current:
+            spans.append(current)
+            current = [row]
+        else:
+            current.append(row)
+    if current:
+        spans.append(current)
+    return spans
+
+
+def classify_candidate(text: str) -> tuple[str, list[str], int]:
+    lowered = text.lower()
+    tags: set[str] = set()
+    kind = "note"
+    importance = 3
+
+    if re.search(r"\b(prefer|preference|always|should|avoid|don't|do not|instead|style|expectation)\b", lowered):
+        kind = "preference"
+        importance = 4
+    if re.search(r"\b(decided|decision|chose|chosen|settled|use|using|approach|architecture)\b", lowered):
+        kind = "decision" if kind == "note" else kind
+        importance = max(importance, 4)
+    if re.search(r"\b(bug|error|failure|failed|fix|fixed|root cause|regression|gotcha)\b", lowered):
+        kind = "gotcha"
+        importance = 5
+    if re.search(r"\b(todo|next|follow[- ]?up|later|remaining)\b", lowered):
+        tags.add("follow-up")
+
+    tag_terms = {
+        "ui": r"\b(ui|frontend|layout|button|buttons|toolbar|icon|icons|tooltip|modal|card)\b",
+        "api": r"\b(api|endpoint|fastapi|localhost|http|curl)\b",
+        "mcp": r"\b(mcp|claude code|tool wrapper)\b",
+        "database": r"\b(sqlite|database|db|schema|chroma|chromadb|vector|fts)\b",
+        "testing": r"\b(test|tests|pytest|coverage|smoke)\b",
+        "import": r"\b(import|transcript|historical|conversation)\b",
+        "agent-behavior": r"\b(agent|claude|codex|memory|recall|consolidat)\b",
+    }
+    for tag, pattern in tag_terms.items():
+        if re.search(pattern, lowered):
+            tags.add(tag)
+    tags.add(kind)
+    return kind, sorted(tags), importance
+
+
+def candidate_title(kind: str, text: str) -> str:
+    summary = candidate_summary(text)
+    summary = re.sub(r"^(user|assistant|system|developer|tool):\s*", "", summary, flags=re.IGNORECASE)
+    return f"Candidate {kind}: {summary[:72]}".rstrip()
+
+
+def candidate_summary(text: str) -> str:
+    compact = re.sub(r"\s+", " ", text).strip()
+    if len(compact) <= 180:
+        return compact
+    return compact[:177].rstrip() + "..."
 
 
 def reindex_vectors(db_path: Path = DEFAULT_DB) -> dict[str, Any]:

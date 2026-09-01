@@ -201,9 +201,11 @@ show_memory
 search_transcript
 import_transcript_file
 start_memory_session
+ensure_memory_session
 capture_memory_turn
 remember_memory
 pending_consolidation
+propose_memories
 mark_session_consolidated
 save_project_checkpoint
 get_project_checkpoint
@@ -218,12 +220,14 @@ For project-scoped setup, copy [.mcp.json.example](./.mcp.json.example) to `.mcp
 GET  /health
 POST /init
 POST /sessions
+POST /sessions/ensure
 POST /turns
 POST /engrams
 GET  /recall
 GET  /engrams/{engram_id}
 GET  /turns/search
 GET  /consolidation/pending
+POST /consolidation/propose
 POST /sessions/{session_id}/mark-consolidated
 POST /vectors/reindex
 POST /checkpoints
@@ -269,6 +273,19 @@ curl -X POST 'http://127.0.0.1:8732/sessions' \
     "title": "Toolbar button discussion"
   }'
 ```
+
+### Ensure A Reusable Session
+
+```sh
+curl -X POST 'http://127.0.0.1:8732/sessions/ensure' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "project": "Example Project",
+    "title": "Toolbar button discussion"
+  }'
+```
+
+Use this when an agent needs a stable session id for capture across a task. If an active session already exists for the same project/title, Engram returns it instead of creating a duplicate.
 
 ### Capture Transcript Turns
 
@@ -450,11 +467,39 @@ Check for unconsolidated sessions:
 python3 -m engram pending
 ```
 
+Propose candidate memories from a pending session:
+
+```sh
+python3 -m engram propose-memories 1 --json
+```
+
+`propose-memories` is a deterministic helper. It suggests candidate source spans, inferred kinds, tags, and summaries. Review the candidates and promote only durable knowledge with `remember`.
+
 Mark a session consolidated:
 
 ```sh
 python3 -m engram mark-consolidated 1
 ```
+
+## Sticky Memory Loop
+
+The recommended agent habit is:
+
+```text
+start work
+  recall_memory(user request)
+  ensure_memory_session(project, task title)
+
+during work
+  capture_memory_turn(...)
+
+after a final answer, user correction, decision, bug fix, or waiting state
+  propose_memories(session_id)
+  remember_memory(...) for approved durable items
+  mark_session_consolidated(session_id)
+```
+
+When ChromaDB is available, `remember_memory` immediately upserts the new engram into the semantic index. Manual vector reindexing is mainly for restore/repair cases: after copying a SQLite database to another machine, deleting `.engram/chromadb`, installing ChromaDB for the first time, or rebuilding a stale vector index.
 
 ## Database Tables
 
@@ -530,6 +575,7 @@ Implemented:
 - Source transcript drill-down from an engram.
 - MCP adapter for Claude Code.
 - Historical transcript import for JSONL, JSON, Markdown, and role-prefixed text.
+- Ensure-session and propose-memory helpers for the sticky memory loop.
 - Seed memories for UI-control recall and FastAPI integration.
 
 Planned:
