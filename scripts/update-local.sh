@@ -98,7 +98,5 @@ Useful checks:
   scripts/start-api.sh
 
 Claude MCP command for this checkout:
-  claude mcp add --transport stdio --scope user \\
-    --env ENGRAM_DB=$(pwd)/.engram/engram.sqlite3 \\
-    engram -- $(pwd)/.venv/bin/engram-mcp
+  scripts/install-mcp.sh
 EOF

@@ -123,6 +123,8 @@ Engram/
     vector_store.py     Optional ChromaDB semantic index
   scripts/
     start-api.sh        Starts the localhost API
+    install-mcp.sh      Installs the Claude Code MCP server
+    update-local.sh     Pulls, installs, migrates, and tests
 ```
 
 ## Installation
@@ -198,9 +200,15 @@ cd /Users/elijah/Documents/ChatGPT/Engram
 Add Engram to Claude Code as a user-scoped MCP server:
 
 ```sh
-claude mcp add --transport stdio --scope user \
-  --env ENGRAM_DB=/Users/elijah/Documents/ChatGPT/Engram/.engram/engram.sqlite3 \
-  engram -- /Users/elijah/Documents/ChatGPT/Engram/.venv/bin/engram-mcp
+scripts/install-mcp.sh
+```
+
+The installer uses `claude mcp add-json`, which avoids Claude CLI option-ordering differences across versions.
+
+Preview the command without running it:
+
+```sh
+scripts/install-mcp.sh --print
 ```
 
 Then in Claude Code:

@@ -169,9 +169,15 @@ cd /path/to/Engram
 Then add the MCP server:
 
 ```sh
-claude mcp add --transport stdio --scope user \
-  --env ENGRAM_DB=/path/to/Engram/.engram/engram.sqlite3 \
-  engram -- /path/to/Engram/.venv/bin/engram-mcp
+scripts/install-mcp.sh
+```
+
+The installer uses `claude mcp add-json`, which avoids Claude CLI option-ordering differences across versions.
+
+Preview the generated command without running it:
+
+```sh
+scripts/install-mcp.sh --print
 ```
 
 In Claude Code, run:
