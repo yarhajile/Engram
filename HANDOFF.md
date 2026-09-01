@@ -124,6 +124,21 @@ Run tests:
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -B -m pytest -q -p no:cacheprovider
 ```
 
+For routine updates after new code is pushed, run:
+
+```sh
+scripts/update-local.sh
+```
+
+Useful options:
+
+```sh
+scripts/update-local.sh --no-pull
+scripts/update-local.sh --no-tests
+scripts/update-local.sh --reindex-vectors
+scripts/update-local.sh --python=/path/to/python3
+```
+
 Start the API:
 
 ```sh

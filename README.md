@@ -141,6 +141,28 @@ The default database path is:
 .engram/engram.sqlite3
 ```
 
+## Updating A Local Checkout
+
+After pulling/cloning Engram on another machine, use the update script for routine upgrades:
+
+```sh
+cd /path/to/Engram
+scripts/update-local.sh
+```
+
+It will pull latest code, create `.venv` if needed, install Engram with dev dependencies, migrate the SQLite database, and run the test suite.
+
+Useful options:
+
+```sh
+scripts/update-local.sh --no-pull
+scripts/update-local.sh --no-tests
+scripts/update-local.sh --reindex-vectors
+scripts/update-local.sh --python=/opt/homebrew/bin/python3
+```
+
+Use `--reindex-vectors` after copying a SQLite database to a new machine, deleting `.engram/chromadb`, or installing ChromaDB for the first time.
+
 ## Running The Local API
 
 Start the localhost service:
