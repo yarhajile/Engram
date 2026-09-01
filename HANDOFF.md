@@ -51,6 +51,8 @@ Important files:
 - Save and retrieve project checkpoints.
 - Rebuild optional ChromaDB vector index.
 - Import historical transcripts.
+- Reuse active sessions with `ensure_session` / `ensure_memory_session`.
+- Propose candidate memories from unconsolidated turns.
 - Expose core operations through CLI, FastAPI, and MCP.
 
 ## Historical Transcript Import
@@ -100,6 +102,7 @@ Useful commands:
 
 ```sh
 .venv/bin/python -m engram pending
+.venv/bin/python -m engram propose-memories <session-id> --json
 .venv/bin/python -m engram search-turns "button style icon tooltip"
 .venv/bin/python -m engram remember --kind preference --title "..." --summary "..."
 ```
@@ -119,6 +122,21 @@ Run tests:
 
 ```sh
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -B -m pytest -q -p no:cacheprovider
+```
+
+For routine updates after new code is pushed, run:
+
+```sh
+scripts/update-local.sh
+```
+
+Useful options:
+
+```sh
+scripts/update-local.sh --no-pull
+scripts/update-local.sh --no-tests
+scripts/update-local.sh --reindex-vectors
+scripts/update-local.sh --python=/path/to/python3
 ```
 
 Start the API:
@@ -168,10 +186,12 @@ Confirm the `engram` server is connected and exposes tools including:
 - `show_memory`
 - `search_transcript`
 - `import_transcript_file`
+- `ensure_memory_session`
 - `start_memory_session`
 - `capture_memory_turn`
 - `remember_memory`
 - `pending_consolidation`
+- `propose_memories`
 - `mark_session_consolidated`
 - `save_project_checkpoint`
 - `get_project_checkpoint`
@@ -186,6 +206,26 @@ Confirm the `engram` server is connected and exposes tools including:
 5. Recall using adjacent terms, not exact terms, to test whether the memory awakens naturally.
 6. If ChromaDB is installed, reindex vectors and test `mode=vector` and `mode=hybrid`.
 7. Test Claude MCP by asking Claude a question that should trigger the imported memory.
+
+## Sticky Memory Loop
+
+The preferred Claude behavior is:
+
+```text
+start work
+  recall_memory(user request)
+  ensure_memory_session(project, task title)
+
+during work
+  capture_memory_turn(...)
+
+after final / waiting / correction / decision / bug fix
+  propose_memories(session_id)
+  remember_memory(...) for approved durable candidates
+  mark_session_consolidated(session_id)
+```
+
+`remember_memory` writes to SQLite and immediately upserts the engram into ChromaDB when ChromaDB is available. Manual `reindex_vector_memory` is mainly for restore, repair, first Chroma install, or deleted `.engram/chromadb` cases.
 
 Example:
 

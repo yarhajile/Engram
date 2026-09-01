@@ -61,6 +61,59 @@ def test_remember_recall_show_and_search_turns(db_path, no_vectors):
     assert turns[0]["content"] == "We prefer icon toolbar controls."
 
 
+def test_remember_upserts_vector_immediately(db_path, monkeypatch):
+    indexed: list[dict] = []
+    monkeypatch.setattr(vector_store, "upsert_engram", lambda item: indexed.append(item) or True)
+
+    memory = store.remember(
+        title="Semantic memory is immediate",
+        summary="New curated engrams should be available to vector recall immediately.",
+        db_path=db_path,
+    )
+
+    assert memory["vector_indexed"] is True
+    assert indexed[0]["id"] == memory["id"]
+    assert indexed[0]["summary"] == "New curated engrams should be available to vector recall immediately."
+
+
+def test_ensure_session_reuses_active_project_title(db_path, no_vectors):
+    first = store.ensure_session("Engram", "Sticky loop", db_path=db_path)
+    second = store.ensure_session("Engram", "Sticky loop", db_path=db_path)
+    third = store.ensure_session("Engram", "Sticky loop", reuse_active=False, db_path=db_path)
+
+    assert first["created"] is True
+    assert second["created"] is False
+    assert second["id"] == first["id"]
+    assert third["created"] is True
+    assert third["id"] != first["id"]
+
+
+def test_propose_memories_from_unconsolidated_turns(db_path, no_vectors):
+    session = store.start_session("Engram", "Consolidation", db_path=db_path)
+    first = store.capture_turn(
+        session["id"],
+        "user",
+        "We prefer compact icon buttons with tooltips in toolbar UI.",
+        db_path=db_path,
+    )
+    last = store.capture_turn(
+        session["id"],
+        "assistant",
+        "I used that preference and avoided oversized text buttons.",
+        phase="final",
+        db_path=db_path,
+    )
+
+    proposed = store.propose_memories(session["id"], db_path=db_path)
+
+    assert proposed["turn_count"] == 2
+    assert proposed["candidates"][0]["kind"] == "preference"
+    assert proposed["candidates"][0]["source_turn_start"] == first["id"]
+    assert proposed["candidates"][0]["source_turn_end"] == last["id"]
+    assert "ui" in proposed["candidates"][0]["tags"]
+    assert "agent-behavior" not in proposed["candidates"][0]["tags"]
+
+
 def test_vector_recall_uses_chroma_results_when_fts_would_not_match(db_path, monkeypatch):
     monkeypatch.setattr(vector_store, "upsert_engram", lambda *args, **kwargs: True)
     indexed_ids: list[int] = []

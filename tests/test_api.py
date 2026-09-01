@@ -87,3 +87,39 @@ def test_api_import_transcript(tmp_path, monkeypatch):
 
     assert imported["turn_count"] == 2
     assert imported["pending_consolidation"] is True
+
+
+def test_api_ensure_session_and_propose_memories(tmp_path, monkeypatch):
+    db_path = tmp_path / "api.sqlite3"
+    monkeypatch.setenv("ENGRAM_DB", str(db_path))
+    monkeypatch.setattr(vector_store, "upsert_engram", lambda *args, **kwargs: False)
+
+    client = TestClient(app)
+
+    first = client.post("/sessions/ensure", json={"project": "API", "title": "Sticky"}).json()
+    second = client.post("/sessions/ensure", json={"project": "API", "title": "Sticky"}).json()
+    user_turn = client.post(
+        "/turns",
+        json={
+            "session_id": first["id"],
+            "role": "user",
+            "content": "We should use compact icon buttons for toolbar actions.",
+        },
+    ).json()
+    assistant_turn = client.post(
+        "/turns",
+        json={
+            "session_id": first["id"],
+            "role": "assistant",
+            "phase": "waiting_on_user",
+            "content": "I will preserve that as a UI preference.",
+        },
+    ).json()
+    proposed = client.post("/consolidation/propose", json={"session_id": first["id"]}).json()
+
+    assert first["created"] is True
+    assert second["created"] is False
+    assert second["id"] == first["id"]
+    assert proposed["candidates"][0]["source_turn_start"] == user_turn["id"]
+    assert proposed["candidates"][0]["source_turn_end"] == assistant_turn["id"]
+    assert proposed["candidates"][0]["kind"] == "preference"

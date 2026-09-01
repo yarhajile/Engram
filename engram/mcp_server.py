@@ -65,6 +65,21 @@ def start_memory_session(
 
 
 @mcp.tool()
+def ensure_memory_session(
+    project: str,
+    title: str = "",
+    metadata: dict[str, Any] | None = None,
+    reuse_active: bool = True,
+) -> dict[str, Any]:
+    """Reuse an active transcript session for a project/title or create one.
+
+    Use this near the start of work so later capture/consolidation calls have
+    a stable session id without manually bootstrapping every turn.
+    """
+    return store.ensure_session(project, title, metadata or {}, reuse_active, database_path())
+
+
+@mcp.tool()
 def capture_memory_turn(
     session_id: int,
     role: MemoryRole,
@@ -124,6 +139,20 @@ def remember_memory(
 def pending_consolidation() -> dict[str, Any]:
     """List sessions with transcript turns that have not been consolidated."""
     return {"sessions": store.pending(database_path())}
+
+
+@mcp.tool()
+def propose_memories(
+    session_id: int,
+    limit: int = 8,
+    max_body_chars: int = 1600,
+) -> dict[str, Any]:
+    """Suggest candidate curated memories from unconsolidated transcript turns.
+
+    This is a deterministic helper, not an approval step. Review candidates
+    and call remember_memory only for durable knowledge worth keeping.
+    """
+    return store.propose_memories(session_id, limit, max_body_chars, database_path())
 
 
 @mcp.tool()

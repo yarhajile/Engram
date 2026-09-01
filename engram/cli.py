@@ -42,6 +42,20 @@ def start_session(args: argparse.Namespace) -> None:
     print(result["id"])
 
 
+def ensure_session(args: argparse.Namespace) -> None:
+    result = store.ensure_session(
+        args.project,
+        args.title or "",
+        args.metadata,
+        reuse_active=not args.no_reuse,
+        db_path=args.db,
+    )
+    if args.json:
+        print(json.dumps(result, indent=2))
+        return
+    print(result["id"])
+
+
 def capture_turn(args: argparse.Namespace) -> None:
     result = store.capture_turn(
         session_id=args.session_id,
@@ -125,6 +139,23 @@ def pending(args: argparse.Namespace) -> None:
         )
 
 
+def propose_memories(args: argparse.Namespace) -> None:
+    result = store.propose_memories(args.session_id, args.limit, args.max_body_chars, args.db)
+    if args.json:
+        print(json.dumps(result, indent=2))
+        return
+    if not result["candidates"]:
+        print("No memory candidates found.")
+        return
+    for candidate in result["candidates"]:
+        print(f"[{candidate['kind']}] {candidate['title']}")
+        print(f"Summary: {candidate['summary']}")
+        print(f"Source turns: {candidate['source_turn_start']}-{candidate['source_turn_end']}")
+        if candidate.get("tags"):
+            print("Tags: " + ", ".join(candidate["tags"]))
+        print("")
+
+
 def mark_consolidated(args: argparse.Namespace) -> None:
     result = store.mark_consolidated(args.session_id, args.db)
     print(
@@ -186,6 +217,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--metadata", default="{}")
     p.set_defaults(func=start_session)
 
+    p = sub.add_parser("ensure-session", help="Reuse an active session for a project/title or create one.")
+    p.add_argument("--project", default=Path.cwd().name)
+    p.add_argument("--title", default="")
+    p.add_argument("--metadata", default="{}")
+    p.add_argument("--no-reuse", action="store_true")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=ensure_session)
+
     p = sub.add_parser("capture-turn", help="Append a raw transcript turn. Use --content - to read stdin.")
     p.add_argument("--session-id", type=int, required=True)
     p.add_argument("--role", choices=["system", "user", "assistant", "tool", "developer"], required=True)
@@ -234,6 +273,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("pending", help="List sessions with unconsolidated transcript turns.")
     p.set_defaults(func=pending)
+
+    p = sub.add_parser("propose-memories", help="Suggest candidate engrams from unconsolidated session turns.")
+    p.add_argument("session_id", type=int)
+    p.add_argument("--limit", type=int, default=8)
+    p.add_argument("--max-body-chars", type=int, default=1600)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=propose_memories)
 
     p = sub.add_parser("mark-consolidated", help="Mark all current turns in a session as consolidated.")
     p.add_argument("session_id", type=int)

@@ -58,3 +58,49 @@ def test_cli_lifecycle_with_json_recall(tmp_path, monkeypatch):
 
     assert rows[0]["id"] == memory_id
     assert rows[0]["durable"] == "high"
+
+
+def test_cli_ensure_session_and_propose_memories(tmp_path, monkeypatch):
+    db_path = tmp_path / "cli.sqlite3"
+    monkeypatch.setenv("ENGRAM_DISABLE_CHROMA", "1")
+
+    first = json.loads(
+        run_cli(
+            db_path,
+            "ensure-session",
+            "--project",
+            "CLI",
+            "--title",
+            "Sticky",
+            "--json",
+        ).stdout
+    )
+    second = json.loads(
+        run_cli(
+            db_path,
+            "ensure-session",
+            "--project",
+            "CLI",
+            "--title",
+            "Sticky",
+            "--json",
+        ).stdout
+    )
+    run_cli(
+        db_path,
+        "capture-turn",
+        "--session-id",
+        str(first["id"]),
+        "--role",
+        "user",
+        "--content",
+        "We should remember API endpoint decisions after final answers.",
+    )
+
+    proposed = json.loads(run_cli(db_path, "propose-memories", str(first["id"]), "--json").stdout)
+
+    assert first["created"] is True
+    assert second["created"] is False
+    assert second["id"] == first["id"]
+    assert proposed["candidates"][0]["kind"] == "preference"
+    assert "api" in proposed["candidates"][0]["tags"]

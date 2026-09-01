@@ -16,6 +16,8 @@ Use Engram to remember durable project knowledge without growing this instructio
 
 Before substantial work, prefer the Engram MCP tool `recall_memory` if it is available. Query with the user's request using `mode="hybrid"` and `include_body=false` first.
 
+When transcript capture is available, call `ensure_memory_session` near the start of work. Reuse the returned session id for later `capture_memory_turn`, `propose_memories`, and `mark_session_consolidated` calls.
+
 If MCP is unavailable, prefer the localhost API if it is running:
 
 ```sh
@@ -34,9 +36,17 @@ Load only the relevant summaries/bodies into context. Do not dump the whole data
 
 ## During Work
 
-Capture transcript turns when the host environment makes them available:
+Capture transcript turns when the host environment makes them available. Prefer MCP:
+
+```text
+ensure_memory_session
+capture_memory_turn
+```
+
+API fallback:
 
 ```sh
+curl -X POST 'http://127.0.0.1:8732/sessions/ensure' -H 'Content-Type: application/json' -d '{"project": "Project Name", "title": "Task title"}'
 curl -X POST 'http://127.0.0.1:8732/turns' -H 'Content-Type: application/json' -d '{"session_id": 1, "role": "user", "phase": "active", "content": "..."}'
 curl -X POST 'http://127.0.0.1:8732/turns' -H 'Content-Type: application/json' -d '{"session_id": 1, "role": "assistant", "phase": "final", "content": "..."}'
 ```
@@ -52,7 +62,19 @@ Prefer append-only turn rows over a giant transcript blob. This allows targeted 
 
 ## Consolidation Boundary
 
-After an assistant final response, a waiting-on-user response, or a meaningful task phase, create or update engrams for durable knowledge. Good engrams are concise and future-useful.
+After an assistant final response, a waiting-on-user response, a user correction, a design/architecture decision, a bug fix, or a meaningful task phase, create or update engrams for durable knowledge. Good engrams are concise and future-useful.
+
+Preferred MCP flow:
+
+```text
+propose_memories(session_id)
+remember_memory(...)
+mark_session_consolidated(session_id)
+```
+
+`propose_memories` suggests candidate source spans. It is not automatic approval. Review candidates and call `remember_memory` only for durable knowledge that should affect future sessions.
+
+After `remember_memory`, the memory is written to SQLite and, when ChromaDB is available, immediately upserted into the semantic index. A manual `reindex_vector_memory` should only be needed after restoring/copying a database, deleting `.engram/chromadb`, installing ChromaDB for the first time, or repairing the vector index.
 
 Capture:
 
@@ -70,6 +92,8 @@ Avoid saving:
 - Large raw tool output as an engram body.
 - Temporary theories that were later disproven, unless the lesson matters.
 - Trivial chat filler.
+
+When memory conflicts, current user instructions override recalled memory, current repository files override recalled memory, and newer specific memories override older general memories. If the conflict matters, mention it and verify before acting.
 
 ## Recall Pattern
 
