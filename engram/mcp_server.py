@@ -160,15 +160,17 @@ def import_transcript_file(
     path: str,
     project: str,
     title: str = "",
-    format: Literal["auto", "jsonl", "json", "markdown", "role-prefix"] = "auto",
+    format: Literal["auto", "jsonl", "json", "markdown", "role-prefix", "claude-code"] = "auto",
     mark_consolidated: bool = False,
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Import a historical transcript file as raw Engram turns.
 
-    Supported formats are JSONL, JSON, Markdown role headings, and simple
-    role-prefixed plain text. Imported sessions are pending consolidation by
-    default so a later curator or agent can create durable engrams from them.
+    Supported formats are JSONL, JSON, Markdown role headings, simple
+    role-prefixed plain text, and native Claude Code session JSONL
+    (~/.claude/projects/*/*.jsonl — auto-detected). Imported sessions are
+    pending consolidation by default so a later curator or agent can create
+    durable engrams from them.
     """
     return store.import_transcript(
         path=Path(path),

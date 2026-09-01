@@ -30,6 +30,8 @@ def parse_transcript(path: Path, fmt: str = "auto") -> list[dict[str, Any]]:
         return parse_markdown(text)
     if selected == "role-prefix":
         return parse_role_prefix(text)
+    if selected == "claude-code":
+        return parse_claude_code(text)
     raise ValueError(f"Unsupported transcript format: {fmt}")
 
 
@@ -37,12 +39,66 @@ def detect_format(path: Path, text: str) -> str:
     suffix = path.suffix.lower()
     stripped = text.lstrip()
     if suffix == ".jsonl":
-        return "jsonl"
+        return "claude-code" if looks_like_claude_code(stripped) else "jsonl"
     if suffix == ".json" or stripped.startswith("{") or stripped.startswith("["):
         return "json"
     if re.search(r"(?im)^#{1,6}\s*(user|human|assistant|claude|ai|system|tool|developer)\b", text):
         return "markdown"
     return "role-prefix"
+
+
+def looks_like_claude_code(stripped_text: str) -> bool:
+    first_line = stripped_text.splitlines()[0] if stripped_text else ""
+    try:
+        item = json.loads(first_line)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(item, dict) and "sessionId" in item and "type" in item
+
+
+def parse_claude_code(text: str) -> list[dict[str, Any]]:
+    turns = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(obj, dict) or obj.get("type") not in ("user", "assistant"):
+            continue
+        if obj.get("isSidechain") or obj.get("isMeta"):
+            continue
+        message = obj.get("message")
+        if not isinstance(message, dict) or message.get("role") not in ("user", "assistant"):
+            continue
+        content = extract_claude_code_content(message["role"], message.get("content"))
+        if not content.strip():
+            continue
+        turn = {"role": message["role"], "content": content, "phase": "imported", "metadata": {}}
+        created_at = obj.get("timestamp")
+        if created_at:
+            turn["created_at"] = str(created_at)
+        turns.append(turn)
+    return compact_turns(turns)
+
+
+def extract_claude_code_content(role: str, content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    if role == "user":
+        if any(isinstance(block, dict) and block.get("type") == "tool_result" for block in content):
+            return ""
+        blocks = [block.get("text", "") for block in content if isinstance(block, dict) and block.get("type") == "text"]
+    else:
+        blocks = [
+            block.get("text") or block.get("thinking") or ""
+            for block in content
+            if isinstance(block, dict) and block.get("type") in ("text", "thinking")
+        ]
+    return "\n\n".join(part for part in blocks if part)
 
 
 def parse_jsonl(text: str) -> list[dict[str, Any]]:

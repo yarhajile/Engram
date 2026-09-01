@@ -330,6 +330,13 @@ markdown
 
 role-prefix
   Plain text blocks beginning with User:, Assistant:, Claude:, etc.
+
+claude-code
+  Native Claude Code session transcripts (~/.claude/projects/*/*.jsonl).
+  Auto-detected. Only real user/assistant turns are kept: tool-result
+  turns, sidechain (subagent) turns, meta turns, and non-conversation
+  lines (mode, attachment, system, etc.) are dropped. Assistant turns
+  keep thinking/text content and drop tool_use/tool_result blocks.
 ```
 
 CLI:
@@ -529,7 +536,7 @@ Implemented:
 - Project checkpoints.
 - Source transcript drill-down from an engram.
 - MCP adapter for Claude Code.
-- Historical transcript import for JSONL, JSON, Markdown, and role-prefixed text.
+- Historical transcript import for JSONL, JSON, Markdown, role-prefixed text, and native Claude Code sessions.
 - Seed memories for UI-control recall and FastAPI integration.
 
 Planned:

@@ -69,6 +69,150 @@ def test_parse_role_prefix_text(tmp_path):
     assert turns[1]["content"] == "Durable project context."
 
 
+def claude_code_line(**overrides):
+    line = {
+        "type": "user",
+        "isSidechain": False,
+        "isMeta": False,
+        "timestamp": "2026-08-27T16:02:00Z",
+        "sessionId": "384568ba-7cc0-4a9c-a491-021d9a3611c6",
+        "message": {"role": "user", "content": "placeholder"},
+    }
+    line.update(overrides)
+    return json.dumps(line)
+
+
+def test_parse_claude_code_extracts_real_user_and_assistant_turns(tmp_path):
+    path = tmp_path / "session.jsonl"
+    path.write_text(
+        "\n".join(
+            [
+                claude_code_line(message={"role": "user", "content": "Fix the lat/long truncation bug."}),
+                claude_code_line(
+                    type="assistant",
+                    message={"role": "assistant", "content": [{"type": "text", "text": "Looking at the view generator now."}]},
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    turns = importer.parse_transcript(path, fmt="claude-code")
+
+    assert [turn["role"] for turn in turns] == ["user", "assistant"]
+    assert turns[0]["content"] == "Fix the lat/long truncation bug."
+    assert turns[1]["content"] == "Looking at the view generator now."
+
+
+def test_parse_claude_code_drops_tool_result_user_turns(tmp_path):
+    path = tmp_path / "session.jsonl"
+    path.write_text(
+        "\n".join(
+            [
+                claude_code_line(message={"role": "user", "content": "Real question."}),
+                claude_code_line(
+                    message={
+                        "role": "user",
+                        "content": [{"type": "tool_result", "content": [{"type": "text", "text": "file contents..."}]}],
+                    }
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    turns = importer.parse_transcript(path, fmt="claude-code")
+
+    assert [turn["content"] for turn in turns] == ["Real question."]
+
+
+def test_parse_claude_code_drops_meta_user_turns(tmp_path):
+    path = tmp_path / "session.jsonl"
+    path.write_text(
+        "\n".join(
+            [
+                claude_code_line(message={"role": "user", "content": "Real question."}),
+                claude_code_line(isMeta=True, message={"role": "user", "content": "## Context Usage\n..."}),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    turns = importer.parse_transcript(path, fmt="claude-code")
+
+    assert [turn["content"] for turn in turns] == ["Real question."]
+
+
+def test_parse_claude_code_joins_thinking_and_text_and_drops_tool_use(tmp_path):
+    path = tmp_path / "session.jsonl"
+    path.write_text(
+        claude_code_line(
+            type="assistant",
+            message={
+                "role": "assistant",
+                "content": [
+                    {"type": "thinking", "thinking": "Let me check the schema first."},
+                    {"type": "tool_use", "name": "Read", "input": {"path": "x.py"}},
+                    {"type": "text", "text": "The schema looks fine."},
+                ],
+            },
+        ),
+        encoding="utf-8",
+    )
+
+    turns = importer.parse_transcript(path, fmt="claude-code")
+
+    assert len(turns) == 1
+    assert "Let me check the schema first." in turns[0]["content"]
+    assert "The schema looks fine." in turns[0]["content"]
+    assert "Read" not in turns[0]["content"]
+
+
+def test_parse_claude_code_ignores_non_conversation_line_types(tmp_path):
+    path = tmp_path / "session.jsonl"
+    path.write_text(
+        "\n".join(
+            [
+                json.dumps({"type": "mode", "mode": "normal", "sessionId": "x"}),
+                json.dumps({"type": "attachment", "sessionId": "x"}),
+                json.dumps({"type": "system", "subtype": "compact_boundary", "sessionId": "x"}),
+                claude_code_line(message={"role": "user", "content": "Only real turn."}),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    turns = importer.parse_transcript(path, fmt="claude-code")
+
+    assert [turn["content"] for turn in turns] == ["Only real turn."]
+
+
+def test_parse_claude_code_drops_sidechain_turns(tmp_path):
+    path = tmp_path / "session.jsonl"
+    path.write_text(
+        "\n".join(
+            [
+                claude_code_line(isSidechain=True, message={"role": "user", "content": "Subagent internal turn."}),
+                claude_code_line(message={"role": "user", "content": "Main turn."}),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    turns = importer.parse_transcript(path, fmt="claude-code")
+
+    assert [turn["content"] for turn in turns] == ["Main turn."]
+
+
+def test_detect_format_auto_picks_claude_code_for_session_shaped_jsonl(tmp_path):
+    path = tmp_path / "session.jsonl"
+    path.write_text(claude_code_line(message={"role": "user", "content": "Auto detected."}), encoding="utf-8")
+
+    turns = importer.parse_transcript(path)
+
+    assert turns[0]["content"] == "Auto detected."
+
+
 def test_import_transcript_creates_pending_session_and_searchable_turns(tmp_path, db_path, no_vectors):
     path = tmp_path / "chat.md"
     path.write_text(

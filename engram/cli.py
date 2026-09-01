@@ -257,7 +257,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("path", type=Path)
     p.add_argument("--project", required=True)
     p.add_argument("--title", default="")
-    p.add_argument("--format", choices=["auto", "jsonl", "json", "markdown", "role-prefix"], default="auto")
+    p.add_argument(
+        "--format", choices=["auto", "jsonl", "json", "markdown", "role-prefix", "claude-code"], default="auto"
+    )
     p.add_argument("--metadata", default="{}")
     p.add_argument("--mark-consolidated", action="store_true")
     p.add_argument("--json", action="store_true")
