@@ -1,0 +1,25 @@
+[project]
+name = "engram"
+version = "0.1.0"
+description = "SQLite-backed episodic memory for coding agents."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.116",
+    "uvicorn[standard]>=0.35",
+    "chromadb>=0.5",
+    "mcp>=1.0,<2.0",
+    "sentence-transformers>=3.0",
+]
+
+[project.scripts]
+engram = "engram.cli:main"
+engram-mcp = "engram.mcp_server:main"
+
+[project.optional-dependencies]
+dev = [
+    "httpx>=0.28",
+    "pytest>=8.0",
+]
+
+[tool.setuptools]
+packages = ["engram"]

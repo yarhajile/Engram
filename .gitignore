@@ -1,0 +1,11 @@
+.DS_Store
+.idea/
+__pycache__/
+*.pyc
+*.egg-info/
+.env
+.venv/
+dist/
+.engram/*.sqlite3
+.engram/*.sqlite3-*
+.engram/chromadb/
